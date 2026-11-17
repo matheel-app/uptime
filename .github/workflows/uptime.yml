@@ -29,7 +29,7 @@ jobs:
         run: |
           open=$(gh issue list --label down --state open --json number --jq '.[0].number')
           if [ "${{ steps.probe.outputs.up }}" = true ]; then
-            [ -n "$open" ] && gh issue close "$open" --comment "Back up at $(date -u +%FT%TZ)."
+            if [ -n "$open" ]; then gh issue close "$open" --comment "Back up at $(date -u +%FT%TZ)."; fi
           elif [ -z "$open" ]; then
             gh label create down --color B60205 2>/dev/null || true
             gh issue create --label down --title "matheel.app is down" --body "${{ steps.probe.outputs.detail }} at $(date -u +%FT%TZ). Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
