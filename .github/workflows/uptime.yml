@@ -4,7 +4,8 @@
 # Three tries a minute apart before calling it down; opens an issue (the owner gets an email) and closes it on recovery.
 name: uptime
 on:
-  schedule: [{ cron: "3,13,23,33,43,53 * * * *" }]
+  schedule:
+    - cron: "3,13,23,33,43,53 * * * *"
   workflow_dispatch:
 permissions: { issues: write }
 concurrency: uptime
