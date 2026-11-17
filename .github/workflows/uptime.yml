@@ -1,0 +1,36 @@
+# Checks matheel.app every 10 minutes (off the hour marks, where GitHub drops the most scheduled runs): /health, then a real invoice on ZATCA's developer sandbox.
+# --curves X25519: CranL's edge drops the large post-quantum ClientHello from GitHub's network (reported to
+# CranL 2026-11-17), so a default curl here would report down while the site is up for nearly everyone.
+# Three tries a minute apart before calling it down; opens an issue (the owner gets an email) and closes it on recovery.
+name: uptime
+on:
+  schedule: [{ cron: "3,13,23,33,43,53 * * * *" }]
+  workflow_dispatch:
+permissions: { issues: write }
+concurrency: uptime
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - id: probe
+        run: |
+          for try in 1 2 3; do
+            h=$(curl -s -A matheel-probe/uptime --curves X25519 -o /dev/null -m 15 -w '%{http_code}' https://matheel.app/health || true)
+            s=$(curl -s -A matheel-probe/uptime --curves X25519 -m 60 https://matheel.app/api/v1/invoices -H 'Content-Type: application/json' \
+                -d '{"environment":"sandbox","invoice":{"type":"simplified","line_items":[{"name":"Uptime check","quantity":1,"price":"1.00"}]}}' \
+                | jq -r '.status // .error.code // .error // "no answer"' || echo "no answer")
+            echo "try $try: health $h, sandbox $s"
+            if [ "$h" = 200 ] && { [ "$s" = reported ] || [ "$s" = sandbox_rate_limited ]; }; then echo "up=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+            [ "$h" = 200 ] && echo "detail=health ok, sandbox: $s (ZATCA's developer portal may be the one down)" >> "$GITHUB_OUTPUT" || echo "detail=health $h, sandbox: $s" >> "$GITHUB_OUTPUT"
+            sleep 60
+          done
+          echo "up=false" >> "$GITHUB_OUTPUT"
+      - env: { GH_TOKEN: "${{ github.token }}", GH_REPO: "${{ github.repository }}" }
+        run: |
+          open=$(gh issue list --label down --state open --json number --jq '.[0].number')
+          if [ "${{ steps.probe.outputs.up }}" = true ]; then
+            [ -n "$open" ] && gh issue close "$open" --comment "Back up at $(date -u +%FT%TZ)."
+          elif [ -z "$open" ]; then
+            gh label create down --color B60205 2>/dev/null || true
+            gh issue create --label down --title "matheel.app is down" --body "${{ steps.probe.outputs.detail }} at $(date -u +%FT%TZ). Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
